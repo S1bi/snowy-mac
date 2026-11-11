@@ -288,7 +288,7 @@ final class WindowTracker {
                                                   displayLayoutBounds: displayLayoutBounds,
                                                   appearance: appearance,
                                                   originalWidths: originalWidths)
-                                                  displayLayoutBounds: displayLayoutBounds, appearance: appearance)
+                                                  displayLayoutBounds: displayLayoutBounds)
             let spotlight = scene.surfaces.compactMap { surface -> SpotlightSnowSupport? in
                 guard surface.isElevated, let level = spotlightLevels[surface.id],
                       surface.id <= UInt64(UInt32.max) else { return nil }
