@@ -10,7 +10,11 @@ struct ParticleHit {
 enum ParticleCollision {
     /// Slab intersection against a radius-expanded rectangle. Continuous, including fast side crossings.
     static func hit(from start: SIMD2<Float>, to end: SIMD2<Float>, radius: Float,
-                    rectangle: CGRect, cornerRadius: Float = 0) -> ParticleHit? {
+                    rectangle: CGRect, cornerRadius: Float = 0,
+                    topSlope: Float = 0, bottomSlope: Float = 0) -> ParticleHit? {
+        if topSlope != 0 || bottomSlope != 0 {
+            return tiltedHit(from: start, to: end, radius: radius, rectangle: rectangle, top: topSlope, bottom: bottomSlope)
+        }
         if cornerRadius > 0 {
             return roundedHit(from: start, to: end, radius: radius, rectangle: rectangle, corner: cornerRadius)
         }
@@ -52,6 +56,40 @@ enum ParticleCollision {
         }
         guard entry >= 0, entry <= 1, exit >= 0,
               normal.x * delta.x + normal.y * delta.y < 0 else { return nil }
+        return ParticleHit(time: entry, position: start + delta * entry, normal: normal)
+    }
+
+    /// Cyrus-Beck against the four half-planes n·p <= d of a tilted (sharp-cornered) quad. The
+    /// sloped faces are expanded vertically by the radius, matching a support contour's contact.
+    private static func tiltedHit(from start: SIMD2<Float>, to end: SIMD2<Float>, radius: Float,
+                                  rectangle: CGRect, top: Float, bottom: Float) -> ParticleHit? {
+        let lo = SIMD2(Float(rectangle.minX), Float(rectangle.minY))
+        let hi = SIMD2(Float(rectangle.maxX), Float(rectangle.maxY))
+        let topX = top >= 0 ? lo.x : hi.x, bottomX = bottom >= 0 ? hi.x : lo.x
+        let planes = [(SIMD2<Float>(-1, 0), -lo.x), (SIMD2(1, 0), hi.x),
+                      (SIMD2(top, -1), top * topX - lo.y), (SIMD2(-bottom, 1), hi.y - bottom * bottomX)]
+            .map { n, d in (n: n / hypot(n.x, n.y), d: (d + radius) / hypot(n.x, n.y)) }
+        let delta = end - start
+        var entry: Float = 0, exit: Float = 1
+        var normal = SIMD2<Float>.zero
+        var shallowest = planes[0], shallowestGap = Float.infinity, embedded = true
+        for plane in planes {
+            let gap = plane.d - (plane.n.x * start.x + plane.n.y * start.y)
+            if gap <= 0.001 { embedded = false }
+            if gap < shallowestGap { shallowest = plane; shallowestGap = gap }
+            let rate = plane.n.x * delta.x + plane.n.y * delta.y
+            if abs(rate) < 0.00001 {
+                if gap < 0 { return nil }
+            } else if rate < 0 {
+                if gap <= 0.001, max(0, gap / rate) >= entry { entry = max(0, gap / rate); normal = plane.n }
+            } else { exit = min(exit, gap / rate) }
+            if entry > exit { return nil }
+        }
+        if embedded {
+            // A tilted window can engulf existing flakes. Push them to its nearest outer face once.
+            return ParticleHit(time: 0, position: start + shallowest.n * shallowestGap, normal: shallowest.n)
+        }
+        guard normal != .zero, entry <= 1 else { return nil }
         return ParticleHit(time: entry, position: start + delta * entry, normal: normal)
     }
 

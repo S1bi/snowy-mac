@@ -132,6 +132,49 @@ final class SystemSurfaceTests: XCTestCase {
         XCTAssertFalse(DesktopSceneBuilder.isFullscreen(displayBounds: display, windows: records))
     }
 
+    private func stripScene(_ thumb: CGRect, originalWidths: [UInt64: CGFloat] = [:]) -> DesktopScene {
+        // Measured on a 1920x1080 display: each strip thumbnail is an ordinary app window at the
+        // bounding box of its tilted projection, shielded by a WindowManager overlay of equal bounds.
+        let app = metadata(id: 1, pid: 1, bounds: CGRect(x: 300, y: 300, width: 500, height: 400))
+        let records = DesktopWindowDecoder.decode(metadata: [metadata(id: 2, pid: 2, bounds: thumb),
+            metadata(id: 3, pid: 3, bounds: thumb), app], processRoles: [2: .other], excludingPID: 999)
+        return DesktopSceneBuilder.build(displayBounds: CGRect(x: 0, y: 0, width: 1920, height: 1080),
+                                         menuInset: 24, windows: records, originalWidths: originalWidths)
+    }
+
+    func testStageManagerStripThumbnailsBecomeTiltedSupports() {
+        let finder = stripScene(CGRect(x: 16, y: 221, width: 138, height: 118))
+        let body = finder.bodies.first { $0.id == 3 }!, surface = finder.surfaces.first { $0.id == 3 }!
+        XCTAssertEqual(body.topSlope, 0.20, accuracy: 0.04)
+        XCTAssertEqual(body.bottomSlope, 0.11, accuracy: 0.03)
+        XCTAssertEqual(surface.slope, body.topSlope)
+        // The near (strip-edge) end is higher; the contour follows the projected top edge.
+        XCTAssertEqual(surface.baseY(at: 126) - surface.baseY(at: 12), body.topSlope * 114, accuracy: 0.01)
+        XCTAssertEqual(body.top(at: Float(body.bounds.maxX)), Float(body.bounds.minY) + body.topSlope * 138, accuracy: 0.01)
+        XCTAssertTrue(body.contains(SIMD2(150, 230)) == false && body.contains(SIMD2(40, 230)))
+        // Unshielded windows stay flat.
+        XCTAssertEqual(finder.bodies.first { $0.id == 1 }!.topSlope, 0)
+        XCTAssertEqual(finder.surfaces.first { $0.id == 1 }!.slope, 0)
+
+        let claude = stripScene(CGRect(x: 15, y: 593, width: 150, height: 152)).bodies.first { $0.id == 3 }!
+        XCTAssertEqual(claude.topSlope, 0, accuracy: 0.05)
+        XCTAssertEqual(claude.bottomSlope, -0.10, accuracy: 0.03)
+        // A right-side strip mirrors the tilt; a thumbnail sliding off-display drops out.
+        let right = stripScene(CGRect(x: 1920 - 16 - 138, y: 221, width: 138, height: 118)).bodies.first { $0.id == 3 }!
+        XCTAssertEqual(right.topSlope, -body.topSlope, accuracy: 0.0001)
+        XCTAssertNil(stripScene(CGRect(x: -113, y: 221, width: 138, height: 118)).bodies.first { $0.id == 3 })
+    }
+
+    func testStripThumbnailTiltGrowsWithTheOriginalWindowWidth() {
+        let thumb = CGRect(x: 16, y: 221, width: 138, height: 118)
+        let small = stripScene(thumb, originalWidths: [3: 800]).bodies.first { $0.id == 3 }!
+        let large = stripScene(thumb, originalWidths: [3: 1920]).bodies.first { $0.id == 3 }!
+        XCTAssertGreaterThan(large.topSlope, small.topSlope + 0.05)
+        // An animation-frame width is no original size: fall back to the measured width scale.
+        XCTAssertEqual(stripScene(thumb, originalWidths: [3: 140]).bodies.first { $0.id == 3 }!,
+                       stripScene(thumb).bodies.first { $0.id == 3 }!)
+    }
+
     func testVisibleFullDisplayDockWindowIsMissionControl() {
         let window = DesktopWindowRecord(id: 1, bounds: CGRect(x: 100, y: 100, width: 500, height: 400), layer: 0, role: .application)
         let dock = { (opacity: Float) in

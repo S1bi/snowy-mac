@@ -46,6 +46,8 @@ final class WindowTracker {
     private var lastQuery: TimeInterval = -.infinity
     private var lastFullQuery: TimeInterval = -.infinity
     private var cachedRecords: [DesktopWindowRecord] = []
+    /// Last unshielded width per window: a Stage Manager thumbnail's tilt depends on its original size.
+    private var originalWidths: [UInt64: CGFloat] = [:]
     private var trackedWindow: UInt32?
     private var roles: [Int32: DesktopWindowRole] = [:]
     private var lastProcessLookup: TimeInterval = -.infinity
@@ -182,8 +184,15 @@ final class WindowTracker {
     }
 
     private func deliverSnapshots(displays: [DisplayGeometry], completion: ([DisplaySnapshot]?) -> Void) {
+        let thumbnails = DesktopSceneBuilder.stripThumbnailIDs(in: cachedRecords)
+        var widths: [UInt64: CGFloat] = [:]
+        for record in cachedRecords where record.role == .application {
+            widths[record.id] = thumbnails.contains(record.id) ? originalWidths[record.id] : record.bounds.width
+        }
+        originalWidths = widths
         let snapshots = Self.snapshots(displays: displays, records: cachedRecords, icons: icons,
-                                       dockLayout: dockLayout, preferredDockIDs: preferredDockIDs)
+                                       dockLayout: dockLayout, preferredDockIDs: preferredDockIDs,
+                                       originalWidths: originalWidths)
         for snapshot in snapshots {
             preferredDockIDs[snapshot.id] = snapshot.dockWindowID
         }
@@ -254,7 +263,8 @@ final class WindowTracker {
     nonisolated private static func snapshots(displays: [DisplayGeometry],
                                               records: [DesktopWindowRecord], icons: [SceneAnchorTarget],
                                               dockLayout: DockLayoutHint?,
-                                              preferredDockIDs: [UInt32: UInt64]) -> [DisplaySnapshot] {
+                                              preferredDockIDs: [UInt32: UInt64],
+                                              originalWidths: [UInt64: CGFloat]) -> [DisplaySnapshot] {
         let spotlightLevels = Dictionary(records.filter { $0.role == .spotlight }.map { ($0.id, $0.layer) },
                                           uniquingKeysWith: { first, _ in first })
         let widgetIDs = Set(records.lazy.filter { $0.role == .widget }.map(\.id))
@@ -264,7 +274,8 @@ final class WindowTracker {
                                                   windows: records, dockLayout: dockLayout,
                                                   preferredDockID: preferredDockIDs[display.id],
                                                   dockBottomInset: display.dockBottomInset,
-                                                  displayLayoutBounds: displayLayoutBounds)
+                                                  displayLayoutBounds: displayLayoutBounds,
+                                                  originalWidths: originalWidths)
             let spotlight = scene.surfaces.compactMap { surface -> SpotlightSnowSupport? in
                 guard surface.isElevated, let level = spotlightLevels[surface.id],
                       surface.id <= UInt64(UInt32.max) else { return nil }

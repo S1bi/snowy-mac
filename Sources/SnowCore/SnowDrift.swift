@@ -36,12 +36,14 @@ public final class SnowDrift {
             let x = Float(i) * spacing
             let edge = surface.id == DesktopSceneBuilder.groundID ? 1 : min(1, min(x, surface.width - x) / taperWidth)
             let taper = edge * edge * (3 - 2 * edge)
+            // A tilted support holds snow up to a level line `limit` above its lowest point.
+            let cap = max(0, limit - max(surface.slope * (surface.width - x), -surface.slope * x))
             // Fixed broad lobes: no shimmering noise or random per-frame bumps.
             let lobe = 0.68 + sin(x * 0.027 + phase) * 0.18
                 + sin(x * 0.071 + phase * 2) * 0.09
                 + sin(x * 0.13 + phase) * 0.05
-            capacities[i] = limit * taper
-            baseCapacities[i] = limit * lobe * taper
+            capacities[i] = cap * taper
+            baseCapacities[i] = cap * lobe * taper
             snowfallCapacities[i] = baseCapacities[i]
             deposition[i] = (0.18 + lobe * 0.17) * taper
             // A sub-point dusting makes a discovered edge visible immediately, then builds gradually.
@@ -117,7 +119,9 @@ public final class SnowDrift {
         for i in 0..<(heights.count - 1) {
             guard surface.isExposed(at: Float(i) * spacing),
                   surface.isExposed(at: Float(i + 1) * spacing) else { continue }
-            let flux = (heights[i] - heights[i + 1]) * 0.12
+            // A tilted support's base drop drives snow toward its lower end until the cap is level.
+            // ponytail: no angle of repose and no spill off the low end; full low-end samples just stop.
+            let flux = (heights[i] - heights[i + 1] + surface.slope * spacing) * 0.12
             let from = flux > 0 ? i : i + 1
             let to = flux > 0 ? i + 1 : i
             let transfer = min(abs(flux), min(scratch[from], max(0, capacities[to] - scratch[to])))

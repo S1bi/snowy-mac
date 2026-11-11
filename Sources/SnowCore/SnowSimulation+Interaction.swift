@@ -13,7 +13,7 @@ extension SnowSimulation {
             guard max(start.x, end.x) + radius >= drift.surface.x,
                   min(start.x, end.x) - radius <= drift.surface.x + drift.surface.width,
                   max(start.y, end.y) + radius >= drift.surface.y - 32,
-                  min(start.y, end.y) - radius <= drift.surface.y + drift.surface.cornerRadius + 2 else { continue }
+                  min(start.y, end.y) - radius <= drift.surface.y + drift.surface.drop + 2 else { continue }
             for i in drift.heights.indices where drift.heights[i] > 0.001 {
                 let localX = Float(i) * drift.spacing
                 guard drift.surface.isExposed(at: localX) else { continue }

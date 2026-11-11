@@ -192,8 +192,8 @@ extension SnowSimulation {
                 let edge = min(x - Float(body.bounds.minX), Float(body.bounds.maxX) - x)
                 let r = body.cornerRadius
                 let inset = edge < r ? r - sqrt(max(0, r * r - (r - edge) * (r - edge))) : 0
-                let low = Float(body.bounds.minY) + inset
-                let high = Float(body.bounds.maxY) - inset
+                let low = body.top(at: x) + inset
+                let high = body.bottom(at: x) - inset
                 intervalScratch.removeAll(keepingCapacity: true)
                 for span in releaseIntervals {
                     if low >= span.upper || high <= span.lower { intervalScratch.append(span) }
@@ -279,8 +279,8 @@ extension SnowSimulation {
                 let edge = min(x - Float(body.bounds.minX), Float(body.bounds.maxX) - x)
                 let r = body.cornerRadius
                 let inset = edge < r ? r - sqrt(max(0, r * r - (r - edge) * (r - edge))) : 0
-                let low = Float(body.bounds.minY) + inset
-                let high = Float(body.bounds.maxY) - inset
+                let low = body.top(at: x) + inset
+                let high = body.bottom(at: x) - inset
                 let top = release.position.y - release.height * 0.5
                 let bottom = release.position.y + release.height * 0.5
                 guard low < bottom, high > top else {

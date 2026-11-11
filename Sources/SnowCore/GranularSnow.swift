@@ -137,8 +137,15 @@ public final class GranularSnow {
                 let y = position(of: row * columns).y
                 let edge = min(y - Float(rect.minY), Float(rect.maxY) - y)
                 let inset = edge < radius ? radius - sqrt(max(0, radius * radius - (radius - edge) * (radius - edge))) : 0
-                let left = max(0, Int(ceil((Float(rect.minX) + inset) / cellSize - 0.5)))
-                let right = min(columns - 1, Int(floor((Float(rect.maxX) - inset) / cellSize - 0.5)))
+                var lower = Float(rect.minX) + inset, upper = Float(rect.maxX) - inset
+                // Tilted edges narrow the row to where it lies between the top and bottom lines.
+                let below = y - Float(rect.minY), above = Float(rect.maxY) - y
+                if body.topSlope > 0 { upper = min(upper, Float(rect.minX) + below / body.topSlope) }
+                if body.topSlope < 0 { lower = max(lower, Float(rect.maxX) + below / body.topSlope) }
+                if body.bottomSlope > 0 { lower = max(lower, Float(rect.maxX) - above / body.bottomSlope) }
+                if body.bottomSlope < 0 { upper = min(upper, Float(rect.minX) - above / body.bottomSlope) }
+                let left = max(0, Int(ceil(lower / cellSize - 0.5)))
+                let right = min(columns - 1, Int(floor(upper / cellSize - 0.5)))
                 guard left <= right else { continue }
                 let base = row * (columns + 1)
                 difference[base + left] += 1

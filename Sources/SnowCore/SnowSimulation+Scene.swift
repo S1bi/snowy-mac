@@ -104,7 +104,7 @@ extension SnowSimulation {
             let drift: SnowDrift
             if let previous = old[surface.id] {
                 if previous.heights.count == count && previous.surface.width == surface.width
-                    && previous.surface.cornerRadius == surface.cornerRadius {
+                    && previous.surface.cornerRadius == surface.cornerRadius && previous.surface.slope == surface.slope {
                     previous.surface = surface
                     drift = previous
                 } else {
@@ -152,8 +152,8 @@ extension SnowSimulation {
                     let edge = min(x - Float(body.bounds.minX), Float(body.bounds.maxX) - x)
                     let r = body.cornerRadius
                     let inset = edge < r ? r - sqrt(max(0, r * r - (r - edge) * (r - edge))) : 0
-                    let low = Float(body.bounds.minY) + inset
-                    let high = Float(body.bounds.maxY) - inset
+                    let low = body.top(at: x) + inset
+                    let high = body.bottom(at: x) - inset
                     if low <= base, high >= base {
                         // No supported column can remain inside a window that covers its base.
                         covered = drift.heights[i]
@@ -178,7 +178,7 @@ extension SnowSimulation {
             let swept = motion.old.bounds.union(motion.new.bounds).insetBy(dx: -CGFloat(padding), dy: -CGFloat(padding))
             guard swept.maxX >= CGFloat(drift.surface.x), swept.minX <= CGFloat(drift.surface.x + drift.surface.width),
                   swept.maxY >= CGFloat(drift.surface.y - 32),
-                  swept.minY <= CGFloat(drift.surface.y + drift.surface.cornerRadius) else { continue }
+                  swept.minY <= CGFloat(drift.surface.y + drift.surface.drop) else { continue }
             for i in drift.heights.indices where drift.heights[i] > 0 {
                 let original = drift.heights[i]
                 let localX = Float(i) * drift.spacing

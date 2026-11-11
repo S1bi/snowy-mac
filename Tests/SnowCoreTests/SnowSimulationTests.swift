@@ -115,6 +115,41 @@ final class SnowSimulationTests: XCTestCase {
         XCTAssertGreaterThan(simulation.drifts[0].height(at: 200), 3)
     }
 
+    func testSnowSlidesTowardTheLowerEndOfATiltedSupport() {
+        for slope: Float in [0.1, -0.1] {
+            let simulation = simulation()
+            simulation.updateSurfaces([Surface(id: 1, x: 100, y: 200, width: 200, slope: slope)])
+            let drift = simulation.drifts[0]
+            for i in drift.heights.indices { drift.heights[i] = 4 }
+            let mass = drift.heights.reduce(0, +)
+            func centroid() -> Float {
+                drift.heights.indices.reduce(0) { $0 + drift.heights[$1] * Float($1) * drift.spacing } / mass
+            }
+            let before = centroid()
+            for _ in 0..<600 { drift.settle() }
+            // Settled snow creeps toward the low end (a flat support has no flux at uniform depth).
+            XCTAssertGreaterThan((centroid() - before) * slope, 0.2)
+            XCTAssertEqual(drift.heights.reduce(0, +), mass, accuracy: 0.01)
+            // Snowfall fills only up to a level line above the lowest point.
+            drift.accumulate(dt: 100_000, intensity: 1)
+            let (high, low): (Float, Float) = slope > 0 ? (20, 180) : (180, 20)
+            XCTAssertGreaterThan(drift.height(at: low), drift.height(at: high) + 4)
+        }
+        // Loose snow can fill the space above the low end of the tilted top.
+        let field = GranularSnow(size: SIMD2(400, 400), maxCells: 1600, maxActive: 100)
+        field.setBodies([SolidBody(id: 1, bounds: CGRect(x: 100, y: 100, width: 200, height: 150), topSlope: 0.2)])
+        func solid(_ x: Float, _ y: Float) -> Bool {
+            field.isSolid(at: Int(y / field.cellSize) * field.columns + Int(x / field.cellSize))
+        }
+        XCTAssertTrue(solid(110, 110))
+        XCTAssertFalse(solid(290, 110))
+        // Falling snow passes the bounding box and lands on the sloped edge.
+        let hit = ParticleCollision.hit(from: SIMD2(290, 90), to: SIMD2(290, 200), radius: 0,
+                                        rectangle: CGRect(x: 100, y: 100, width: 200, height: 150), topSlope: 0.2)
+        XCTAssertEqual(hit?.position.y ?? 0, 138, accuracy: 0.01)
+        XCTAssertGreaterThan(hit?.normal.x ?? 0, 0)
+    }
+
     func testDockGetsALowerRidgeThanWindows() {
         let simulation = simulation()
         simulation.updateSurfaces([Surface(id: 1, x: 100, y: 700, width: 400, isDock: true)])

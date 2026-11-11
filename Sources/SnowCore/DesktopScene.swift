@@ -7,16 +7,26 @@ public enum DesktopSceneBuilder {
     public static let dockID = UInt64.max - 1
     public static let maximumBodies = 64
     public static let maximumSurfaces = 48
+    /// Stage Manager strip thumbnail model: the original window yawed by `stripYaw` about its
+    /// near (screen-edge) side, projected with `stripFocalLength` (original points) from an eye
+    /// at the display's vertical centre, then scaled into the reported bounds. Calibration knobs
+    /// fitted to live 1920x1080 measurements (edge slopes of ~+0.20/+0.11 and ~0/-0.10).
+    static let stripYaw: Float = 44 * .pi / 180
+    static let stripFocalLength: Float = 11_500
+    /// Measured reported-bounds width / original window width (0.095-0.099 across windows).
+    static let stripWidthScale: CGFloat = 0.097
 
     public static func build(displayBounds display: CGRect, menuInset: Float,
                              windows: [DesktopWindowRecord], dockLayout: DockLayoutHint? = nil,
                              preferredDockID: UInt64? = nil, dockBottomInset: Float? = nil,
-                             displayLayoutBounds: CGRect? = nil) -> DesktopScene {
+                             displayLayoutBounds: CGRect? = nil,
+                             originalWidths: [UInt64: CGFloat] = [:]) -> DesktopScene {
         guard valid(display), display.width > 1, display.height > 1 else {
             return DesktopScene(surfaces: [], bodies: [])
         }
         let layout = displayLayoutBounds ?? display
         let floatingLevel = Int(CGWindowLevelForKey(.floatingWindow))
+        let thumbnails = stripThumbnailIDs(in: windows)
         let candidates = windows.prefix(512).filter { record in
             guard valid(record.bounds), record.bounds.intersects(display) else { return false }
             switch record.role {
@@ -31,6 +41,8 @@ public enum DesktopSceneBuilder {
                 return record.layer >= 0 && record.layer < 20
                     && record.bounds.width >= 48 && record.bounds.height >= 32
                     && !oversizedFloatingWindow
+                    // A thumbnail sliding off-display would clip its tilt reference.
+                    && (!thumbnails.contains(record.id) || display.contains(record.bounds))
             case .widget: return plausibleWidget(record.bounds, display: display)
             case .dock:
                 // Vertical Docks are intentionally outside the snow scene, including
@@ -135,10 +147,14 @@ public enum DesktopSceneBuilder {
         for record in candidates where record.role == .application {
             if selected.count < maximumBodies, ids.insert(record.id).inserted { selected.append(record) }
         }
+        let tilts = Dictionary(uniqueKeysWithValues: selected.filter { thumbnails.contains($0.id) }.map {
+            ($0.id, tilt(of: $0.bounds, display: display, originalWidth: originalWidths[$0.id]))
+        })
         let bodies = selected.map { record in
             SolidBody(id: record.id, bounds: record.bounds.offsetBy(dx: -display.minX, dy: -display.minY)
                 .intersection(CGRect(origin: .zero, size: display.size)), cornerRadius: radius(for: record),
-                isElevated: record.role == .spotlight)
+                isElevated: record.role == .spotlight,
+                topSlope: tilts[record.id]?.top ?? 0, bottomSlope: tilts[record.id]?.bottom ?? 0)
         }
         let width = Float(display.width), height = Float(display.height)
         var groundSpans = [Span(0, width)]
@@ -176,9 +192,37 @@ public enum DesktopSceneBuilder {
             surfaces.append(Surface(id: record.id, x: Float(left - display.minX), y: top,
                                     width: Float(right - left), visibleSpans: spans, isDock: record.role == .dock,
                                     cornerRadius: radius(for: record), snowfallSpans: snowfall,
-                                    releasesSnowWhenRemoved: record.role == .spotlight))
+                                    releasesSnowWhenRemoved: record.role == .spotlight,
+                                    slope: tilts[record.id]?.top ?? 0))
         }
         return DesktopScene(surfaces: surfaces, bodies: bodies, dockWindowID: dockWindowID)
+    }
+
+    /// Stage Manager reports each strip thumbnail as an ordinary app window at the bounding box
+    /// of its tilted projection; WindowManager shields each one with an overlay of identical bounds.
+    public static func stripThumbnailIDs(in windows: [DesktopWindowRecord]) -> Set<UInt64> {
+        let shields = windows.prefix(512).filter { $0.role == .other && $0.layer >= 0 && $0.layer < 20 }.map(\.bounds)
+        return Set(windows.prefix(512).filter { record in
+            record.role == .application && shields.contains {
+                abs($0.minX - record.bounds.minX) < 2 && abs($0.minY - record.bounds.minY) < 2
+                    && abs($0.width - record.bounds.width) < 2 && abs($0.height - record.bounds.height) < 2
+            }
+        }.map(\.id))
+    }
+
+    /// Top and bottom edge slopes of a strip thumbnail from its reported bounds. Each edge's
+    /// far end converges toward the eye by the perspective factor of the original window width.
+    static func tilt(of rect: CGRect, display: CGRect, originalWidth: CGFloat?) -> (top: Float, bottom: Float) {
+        // Fallback when the window was never seen outside the strip. A cached width below 4x the
+        // thumbnail is an animation frame, not an original.
+        let width = Float(originalWidth.flatMap { $0 > rect.width * 4 ? $0 : nil } ?? rect.width / stripWidthScale)
+        let perspective = stripFocalLength / (stripFocalLength + width * sin(stripYaw))
+        let eye = Float(display.midY), minY = Float(rect.minY), maxY = Float(rect.maxY)
+        // Bounds touch the near edge on the side away from the eye; the far edge on the other.
+        let topNear = minY <= eye ? minY : eye + (minY - eye) / perspective
+        let bottomNear = maxY >= eye ? maxY : eye + (maxY - eye) / perspective
+        let scale = (rect.midX < display.midX ? 1 : -1) * (1 - perspective) / Float(rect.width)
+        return ((eye - topNear) * scale, (eye - bottomNear) * scale)
     }
 
     public static func isFullscreen(displayBounds display: CGRect, windows: [DesktopWindowRecord]) -> Bool {

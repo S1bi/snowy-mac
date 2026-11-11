@@ -6,8 +6,15 @@ public struct SolidBody: Equatable, Sendable {
     public var bounds: CGRect
     public var cornerRadius: Float
     public var isElevated: Bool
-    public init(id: UInt64, bounds: CGRect, cornerRadius: Float = 0, isElevated: Bool = false) {
+    /// Edge dy/dx of a perspective-tilted body (Stage Manager strip thumbnail). Each edge is a
+    /// line touching `bounds` at its extreme (top: highest, bottom: lowest) end; zero keeps the rectangle.
+    public var topSlope: Float
+    public var bottomSlope: Float
+    public init(id: UInt64, bounds: CGRect, cornerRadius: Float = 0, isElevated: Bool = false,
+                topSlope: Float = 0, bottomSlope: Float = 0) {
         self.id = id
+        self.topSlope = topSlope.isFinite ? topSlope : 0
+        self.bottomSlope = bottomSlope.isFinite ? bottomSlope : 0
         self.bounds = bounds
         self.cornerRadius = cornerRadius.isFinite
             ? max(0, min(cornerRadius, Float(min(bounds.width, bounds.height) / 2))) : 0
@@ -17,12 +24,21 @@ public struct SolidBody: Equatable, Sendable {
     public func contains(_ point: SIMD2<Float>, padding: Float = 0) -> Bool {
         let radius = max(0, cornerRadius + padding)
         let rect = bounds.insetBy(dx: -CGFloat(padding), dy: -CGFloat(padding))
-        guard rect.contains(CGPoint(x: CGFloat(point.x), y: CGFloat(point.y))) else { return false }
+        guard rect.contains(CGPoint(x: CGFloat(point.x), y: CGFloat(point.y))),
+              point.y >= top(at: point.x) - padding, point.y <= bottom(at: point.x) + padding else { return false }
         guard radius > 0 else { return true }
         let centerX = max(Float(rect.minX) + radius, min(point.x, Float(rect.maxX) - radius))
         let centerY = max(Float(rect.minY) + radius, min(point.y, Float(rect.maxY) - radius))
         let offset = point - SIMD2(centerX, centerY)
         return offset.x * offset.x + offset.y * offset.y <= radius * radius
+    }
+
+    public func top(at x: Float) -> Float {
+        Float(bounds.minY) + max(topSlope * (x - Float(bounds.minX)), topSlope * (x - Float(bounds.maxX)))
+    }
+
+    public func bottom(at x: Float) -> Float {
+        Float(bounds.maxY) + min(bottomSlope * (x - Float(bounds.minX)), bottomSlope * (x - Float(bounds.maxX)))
     }
 }
 

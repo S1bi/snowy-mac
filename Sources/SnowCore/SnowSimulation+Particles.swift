@@ -50,7 +50,8 @@ extension SnowSimulation {
             for column in first...last {
                 for index in bodyBuckets[column] {
                     if let hit = ParticleCollision.hit(from: start, to: end, radius: particle.radius,
-                                                       rectangle: bodies[index].bounds, cornerRadius: bodies[index].cornerRadius),
+                                                       rectangle: bodies[index].bounds, cornerRadius: bodies[index].cornerRadius,
+                                                       topSlope: bodies[index].topSlope, bottomSlope: bodies[index].bottomSlope),
                        nearest == nil || hit.time < nearest!.time {
                         nearest = hit
                     }
@@ -122,7 +123,7 @@ extension SnowSimulation {
                 let right = min(drift.surface.width, max(start.x, end.x) - drift.surface.x)
                 guard right >= left,
                       max(start.y, end.y) + radius >= drift.surface.y - 30,
-                      min(start.y, end.y) + radius <= drift.surface.y + drift.surface.cornerRadius + 0.01 else { continue }
+                      min(start.y, end.y) + radius <= drift.surface.y + drift.surface.drop + 0.01 else { continue }
                 let begin = max(0, min(drift.heights.count - 2, Int(left / drift.spacing)))
                 let finish = max(begin, min(drift.heights.count - 2, Int(right / drift.spacing)))
                 for i in begin...finish {
