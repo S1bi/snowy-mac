@@ -132,6 +132,15 @@ final class SystemSurfaceTests: XCTestCase {
         XCTAssertFalse(DesktopSceneBuilder.isFullscreen(displayBounds: display, windows: records))
     }
 
+    func testVisibleFullDisplayDockWindowIsMissionControl() {
+        let window = DesktopWindowRecord(id: 1, bounds: CGRect(x: 100, y: 100, width: 500, height: 400), layer: 0, role: .application)
+        let dock = { (opacity: Float) in
+            DesktopWindowRecord(id: 2, bounds: self.display, layer: 18, role: .dock, opacity: opacity)
+        }
+        XCTAssertTrue(DesktopSceneBuilder.isFullscreen(displayBounds: display, windows: [dock(1), window]))
+        XCTAssertFalse(DesktopSceneBuilder.isFullscreen(displayBounds: display, windows: [dock(0), window]))
+    }
+
     func testSpotlightClassificationDoesNotUseSubstringsOrWindowTitles() {
         for owner in ["Example Spotlight Tool", "WindowManager Helper", "Example App"] {
             var window = metadata(id: 1, pid: 1, bounds: CGRect(x: 200, y: 180, width: 600, height: 70), layer: 1000)

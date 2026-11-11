@@ -182,6 +182,14 @@ public enum DesktopSceneBuilder {
     }
 
     public static func isFullscreen(displayBounds display: CGRect, windows: [DesktopWindowRecord]) -> Bool {
+        // Mission Control shows a visible full-display Dock window while WindowServer still reports
+        // each app at its pre-transform frame, so snow would follow frames that are no longer drawn.
+        // The idle Dock host is transparent.
+        if windows.prefix(512).contains(where: {
+            $0.role == .dock && $0.opacity > 0.05 && valid($0.bounds)
+                && $0.bounds.width >= display.width - 3 && $0.bounds.height >= display.height - 3
+                && abs($0.bounds.minX - display.minX) < 3 && abs($0.bounds.minY - display.minY) < 3
+        }) { return true }
         guard let front = windows.prefix(512).first(where: {
             $0.role == .application && $0.layer == 0 && valid($0.bounds)
                 && $0.bounds.intersects(display) && $0.bounds.width >= 120 && $0.bounds.height >= 80
